@@ -1,0 +1,33 @@
+# ---- Simulink / MATLAB build artefacts ----
+slprj/
+sccprj/
+codegen/
+*.slxc
+*.mexw64
+*.mexa64
+*.mexmaci64
+
+# ---- Editor and autosave leftovers ----
+*.asv
+*.m~
+*.autosave
+*.bak
+*.slx.original
+*.mdl.original
+*.slx.r20*
+*.mdl.r20*
+
+# ---- Simulink cache and logs ----
+*.slxp
+*.sldd.r20*
+slprj_*/
+*.log
+
+# ---- MATLAB session state ----
+matlab.mat
+octave-workspace
+
+# ---- OS clutter ----
+.DS_Store
+Thumbs.db
+desktop.ini
