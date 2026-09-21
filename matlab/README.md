@@ -21,6 +21,7 @@ Then:
 | `droneguard_run` | Fly one mission, draw 4 plots |
 | `droneguard_run('fixed')` | Same flight with the dumb 25% turn-back rule |
 | `droneguard_compare` | Fly both, draw 5 plots comparing them |
+| `droneguard_dashboard` | **Watch the mission play back** — drone flying, camera view, gauges updating |
 | `open_system('DroneGuard_Sim')` | Open the block diagram |
 
 ---
@@ -50,6 +51,7 @@ Never deployed. Exists to fly the virtual drone and draw pictures.
 | `droneguard_compare.m` | Runs it twice and compares. |
 | `droneguard_plot.m` | Draws the 4-panel mission figure. |
 | `droneguard_missionend.m` | Works out when the mission really ended. |
+| `droneguard_dashboard.m` | Animated playback: scene, camera view and live gauges. |
 
 ### `model/`
 
@@ -83,6 +85,106 @@ A circle marks where each mission ended.
 
 Panel 5 shows **only the combined score**, because six lines would be
 unreadable. For the motor/battery breakdown use `droneguard_run`.
+
+---
+
+## The animated dashboard
+
+```matlab
+droneguard_dashboard                        % play the default mission (20x)
+droneguard_dashboard('fixed')               % play the naive 25%-rule mission
+droneguard_dashboard('dynamic', Speed=5)    % SLOW - 5x real time
+droneguard_dashboard('dynamic', Speed=1)    % real time (the full 11 minutes)
+droneguard_dashboard('dynamic', Speed=60)   % fast
+droneguard_dashboard('dynamic', Until=335)  % stop and hold at t = 335 s
+droneguard_dashboard('dynamic', Pace=false) % render flat out, ignore Speed
+droneguard_dashboard('dynamic', Save="run.mp4")   % also write a video
+```
+
+### Speed
+
+`Speed` is a real multiple of wall-clock time: the 649-second mission takes
+`649/Speed` seconds to watch. **Lower it to slow the animation down.**
+
+| Speed | Playback takes | Measured |
+|---|---|---|
+| 1 | 11 min | real time |
+| 5 | 130 s | 132 s |
+| 20 (default) | 32 s | 35 s |
+| 60 | 11 s | 24 s |
+
+Slow speeds are accurate. High speeds overrun, because Windows cannot pause for
+less than about 15 ms and at 60x each frame is only allowed 34 ms. If you just
+want it over with, use `Pace=false` — that skips pacing entirely and renders as
+fast as the graphics allow (about 4 s).
+
+Pacing is also skipped automatically when writing a video, where the frame rate
+of the file is what matters rather than how long you sat watching it.
+
+Six panels, all updating together:
+
+| Panel | Shows |
+|---|---|
+| Mission (top left) | Side-on view. The drone glyph flies out and back, trailing its path. The **red shaded region is everywhere it could no longer get home from** — it creeps inward as the motor degrades. The turn happens when the drone touches that boundary. |
+| Down-looking view | Ground scrolling past at true ground speed. |
+| Status panel | Live numbers, and a lamp that goes green → amber → red with the alert level. |
+| Health / Charge / Motor | The same traces as `droneguard_run`, drawn progressively as the flight unfolds. |
+
+The drone glyph is also coloured by alert level, so you can see it go from green
+to red while it flies.
+
+### Two honest notes
+
+**It is playback, not live animation.** The simulation runs first, then the
+logged result is replayed. The solver does not run in wall-clock time, so there
+is nothing to watch while it solves. What you see is the real simulated flight,
+frame for frame.
+
+**The camera panel is scenery, not sensor data.** The model is longitudinal and
+vertical only — there is no 3D world in the physics and no camera. That panel is
+rendered *from position*: the ground scrolls at the true ground speed and the
+field of view widens correctly with altitude, but the terrain itself is
+synthetic. Nothing else in the project depends on it.
+
+---
+
+## What it runs on, and what it models
+
+### Software
+
+| | |
+|---|---|
+| Required | **MATLAB + Simulink. Nothing else.** |
+| Verified with | `dependencies.toolboxDependencyAnalysis` on every file and the model — both report only MATLAB and Simulink |
+| Developed on | R2026a Update 5 |
+| Minimum | R2019b for the code; R2025a for the nicest plots (`theme` is guarded, so older still works) |
+
+No Aerospace Toolbox, no UAV Toolbox, no Simscape, no Stateflow. The physics is
+hand-built from basic Simulink blocks and the algorithm is plain MATLAB, so the
+project clones and runs on a bare Simulink licence.
+
+### Solver
+
+Fixed-step **ode3** at **0.1 s**, running to 800 s. Fixed-step because the
+module is meant to run on a 10 Hz clock on real hardware — a variable-step
+solver would not represent that honestly, and fixed-step is what code
+generation needs anyway.
+
+### The modelled world
+
+| Quantity | Value |
+|---|---|
+| Gravity | 9.81 m/s² |
+| Ambient air | 30 °C, constant |
+| Drag | 0.55 N per m/s, linear |
+| Airframe | 2.0 kg |
+| Battery | 5.0 Ah, 14.0–16.8 V, 0.020 Ω internal |
+
+**What the environment does not include:** wind, gusts, air density changing
+with altitude, terrain, obstacles, temperature varying with altitude or time of
+day, and any lateral or rotational motion. The drone moves forward and
+vertically only. Ambient temperature being a fixed 30 °C matters most — in
+reality it would fall as the drone climbs and change the motor thermal picture.
 
 ---
 

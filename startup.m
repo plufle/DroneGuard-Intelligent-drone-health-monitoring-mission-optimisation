@@ -16,4 +16,5 @@ fprintf('\nDroneGuard ready. Commands:\n');
 fprintf('  droneguard_run              fly one mission and plot it\n');
 fprintf('  droneguard_run(''fixed'')     same flight, naive fixed 25%% turn-back rule\n');
 fprintf('  droneguard_compare          fly both and compare side by side\n');
+fprintf('  droneguard_dashboard        watch the mission play back live\n');
 fprintf('  open_system(''DroneGuard_Sim'')   open the block diagram\n\n');

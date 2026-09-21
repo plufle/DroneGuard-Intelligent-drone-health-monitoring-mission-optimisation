@@ -7,14 +7,25 @@ components slowly wear out. A DroneGuard module attached to it does two jobs:
 score the aircraft's health from telemetry, and decide when it must turn around
 to get home alive.
 
+![dashboard](docs/images/droneguard_dashboard.png)
+
+*`droneguard_dashboard` — the mission played back. Caught here the moment the
+drone turns: it has just touched the red boundary marking everywhere it could
+no longer get home from.*
+
 ![mission](docs/images/droneguard_mission.png)
 
 ---
 
 ## Quick start
 
-Requires **MATLAB + Simulink**. No other toolboxes. Developed on R2026a;
-R2025a or newer recommended (older releases work, the plots are just less pretty).
+Requires **MATLAB + Simulink**. No other toolboxes — verified with
+`dependencies.toolboxDependencyAnalysis`, which reports only MATLAB and
+Simulink for every file and for the model. Developed on R2026a; R2025a or
+newer recommended (older releases work, the plots are just less pretty).
+
+Solver: fixed-step ode3 at 0.1 s — fixed-step because the DroneGuard module
+is meant to run on a 10 Hz clock on real hardware.
 
 ```matlab
 cd <this folder>
@@ -23,6 +34,8 @@ startup                     % once per session - puts everything on the path
 droneguard_run              % fly one mission and plot it
 droneguard_run('fixed')     % same flight, naive fixed 25% turn-back rule
 droneguard_compare          % fly both and compare side by side
+droneguard_dashboard        % watch the mission play back, with live gauges
+droneguard_dashboard('dynamic', Speed=5)   % ...slower. Speed=1 is real time
 
 open_system('DroneGuard_Sim')   % open the block diagram
 ```
@@ -86,6 +99,7 @@ pictures.
 | `matlab/sim/droneguard_run.m` | One-command entry point: load parameters, simulate, plot. |
 | `matlab/sim/droneguard_compare.m` | Flies the identical mission twice — dynamic vs fixed turn-back rule — and plots them together. |
 | `matlab/sim/droneguard_plot.m` | The four-panel mission figure and the console summary. |
+| `matlab/sim/droneguard_dashboard.m` | Animated playback of a mission: side-on scene, down-looking view, and gauges updating as it flies. |
 | `matlab/sim/droneguard_missionend.m` | Finds the sample where a mission genuinely ended (home, or battery empty) so plots do not show meaningless tails. |
 | `docs/DroneGuard.pdf` | The original project deck this is built from. |
 
