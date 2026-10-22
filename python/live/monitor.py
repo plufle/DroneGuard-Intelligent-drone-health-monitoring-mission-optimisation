@@ -10,6 +10,8 @@ energy margin, or health ALARM) it sends RETURN_TO_LAUNCH - once. Reaching the
 drop point is the autopilot's own business, so no command is sent for that.
 """
 
+from __future__ import annotations
+
 import argparse
 import threading
 import time

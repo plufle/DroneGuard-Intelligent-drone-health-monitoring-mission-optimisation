@@ -4,6 +4,8 @@ The planner writes it for a sized drone; the monitor (and the simulation) read
 it, so the numbers on the Pi are exactly the ones the design was checked with.
 """
 
+from __future__ import annotations
+
 import json
 from dataclasses import asdict, fields
 from pathlib import Path

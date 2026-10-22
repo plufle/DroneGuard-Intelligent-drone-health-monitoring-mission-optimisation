@@ -5,6 +5,8 @@ them, and are marked where they do not. Delivery is the first application the
 planner supports; the others are listed so the website can show what is next.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 

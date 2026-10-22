@@ -2,17 +2,20 @@
 
     run_lockstep(...)   one loop, MAVLink bytes passed in memory - deterministic,
                         same tick order as the simulation, used by the tests
-    LiveSession(...)    two threads talking real MAVLink over UDP on localhost,
-                        paced against the wall clock - what the dashboard runs
+    LiveSession(...)    the drone and DroneGuard in two threads on this machine,
+                        real MAVLink over UDP, paced against the wall clock
+    (live/remote.py)    DroneGuard here, the drone on another machine (the Pi)
 """
+
+from __future__ import annotations
 
 import socket
 import threading
-import time
 
 from droneguard.params import SimParams
 from droneguard.thresholds import Thresholds
 
+from .autopilot import fly, open_drone_link, quiet_udp, recv
 from .mavlink_io import DRONE_SYSTEM, DRONEGUARD_SYSTEM, encode_frame, link
 from .monitor import Monitor
 from .virtual_drone import VirtualDrone
@@ -36,32 +39,16 @@ def run_lockstep(p: SimParams, c: Thresholds, use_dynamic: float = 1.0,
     return mon, drone
 
 
-def _quiet_udp(conn) -> None:
-    """Windows reports 'connection reset' on a UDP socket when the other side has
-    gone away (WinError 10054). For telemetry that is meaningless - switch it off."""
-    sock = getattr(conn, "port", None)
-    if sock is not None and hasattr(socket, "SIO_UDP_CONNRESET"):
-        try:
-            sock.ioctl(socket.SIO_UDP_CONNRESET, False)
-        except OSError:
-            pass
-
-
-def _recv(conn, **kw):
-    try:
-        return conn.recv_match(**kw)
-    except ConnectionResetError:
-        return None
-
-
-def free_udp_port() -> int:
+def free_udp_port(host: str = "127.0.0.1") -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        s.bind(("127.0.0.1", 0))
+        s.bind((host, 0))
         return s.getsockname()[1]
 
 
 class LiveSession:
     """A virtual drone and a monitor in two threads, joined by UDP MAVLink."""
+
+    source = "laptop"
 
     def __init__(self, p: SimParams, c: Thresholds, speed: float = 10.0,
                  use_dynamic: float = 1.0, n_motors: int = 4, label: str = "",
@@ -108,53 +95,35 @@ class LiveSession:
     def running(self) -> bool:
         return bool(self._threads) and not self.finished.is_set()
 
+    def info(self) -> dict:
+        d = self.drone
+        return {"source": self.source, "t": round(d.t, 1), "drone_phase": d.phase_name,
+                "faults": {k: round(v, 3) for k, v in d.fault_levels().items()},
+                "commands_received": self.commands_received, "port": self.port}
+
     # ---- the two sides --------------------------------------------------
+    def _take_faults(self) -> list:
+        with self._lock:
+            faults, self._pending_faults = self._pending_faults, []
+        return faults
+
+    def _count_rtl(self) -> None:
+        self.commands_received += 1
+
     def _drone_loop(self) -> None:
-        # Not "udpout": on Windows pymavlink binds udpout to the SAME port it
-        # sends to, so the monitor's replies loop back to the monitor. Instead
-        # the drone listens on its own port and is told where the monitor is.
-        mav = self.mavutil.mavlink_connection(
-            f"udpin:127.0.0.1:{free_udp_port()}", source_system=DRONE_SYSTEM,
-            dialect="ardupilotmega")
-        _quiet_udp(mav)
-        ground = ("127.0.0.1", self.port)
-        mav.clients.add(ground)
-        mav.clients_last_alive[ground] = time.time()
-        mav.mav.srcComponent = 1
-        d, h = self.drone, self.p.Ts
-        t0 = time.perf_counter()
-        last_hb = -1.0
+        conn = open_drone_link("127.0.0.1", self.port)
         try:
-            while not self.stop_event.is_set():
-                with self._lock:
-                    faults, self._pending_faults = self._pending_faults, []
-                for kind in faults:
-                    d.inject(kind, self.fault_ramp_s)
-                if d.t - last_hb >= 1.0:
-                    mav.mav.heartbeat_send(2, 3, 0, 0, 4)   # quadrotor, ArduPilot, active
-                    last_hb = d.t
-                for m in encode_frame(d.telemetry(), self.c.Cap_Ah, self.n_motors):
-                    mav.mav.send(m)
-                while (cmd := _recv(mav, blocking=False)) is not None:
-                    if d.command(cmd):
-                        self.commands_received += 1
-                        mav.mav.command_ack_send(cmd.command, 0)
-                if d.done:
-                    break
-                d.advance()
-                wait = t0 + d.t / self.speed - time.perf_counter()
-                if wait > 0:
-                    time.sleep(wait)
+            fly(conn, self.drone, self.c.Cap_Ah, self.n_motors, self.speed, self.stop_event,
+                self.fault_ramp_s, pending_faults=self._take_faults, on_rtl=self._count_rtl)
         finally:
-            time.sleep(0.3)                 # let the last frames land
             self.finished.set()
-            mav.close()
+            conn.close()
 
     def _monitor_loop(self, ground) -> None:
-        _quiet_udp(ground)
+        quiet_udp(ground)
         try:
             while not self.stop_event.is_set():
-                msg = _recv(ground, blocking=True, timeout=0.2)
+                msg = recv(ground, blocking=True, timeout=0.2)
                 if msg is None:
                     if self.finished.is_set():
                         break

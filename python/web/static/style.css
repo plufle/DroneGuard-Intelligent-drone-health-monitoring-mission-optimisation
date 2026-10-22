@@ -61,6 +61,7 @@ select { font: 14px var(--sans); color: var(--ink); background: var(--panel); bo
               font: 500 14px var(--mono); cursor: pointer; border-right: 1px solid var(--line); }
 .seg button:last-child { border-right: 0; }
 .seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.seg button:disabled { color: var(--muted); opacity: 0.45; cursor: not-allowed; }
 .btn { border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 8px;
        padding: 8px 14px; font: 600 14px var(--sans); cursor: pointer; text-decoration: none;
        display: inline-flex; align-items: center; gap: 6px; }

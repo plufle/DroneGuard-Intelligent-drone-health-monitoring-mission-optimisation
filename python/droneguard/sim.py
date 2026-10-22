@@ -16,6 +16,8 @@ altitude-PID integrator and derivative filter, speed-PI integrator, motor
 thermal lag, battery SOC. Plus the Command_Delay = the model's 10 states.
 """
 
+from __future__ import annotations
+
 import math
 from dataclasses import dataclass
 

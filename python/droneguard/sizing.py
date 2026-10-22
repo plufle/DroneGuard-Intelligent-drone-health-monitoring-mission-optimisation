@@ -17,6 +17,8 @@ cannot feed its motors got into it. Step 6 is the fix.
     python -m droneguard.sizing --payload-kg 2 --endurance-min 15
 """
 
+from __future__ import annotations
+
 import argparse
 import math
 from dataclasses import dataclass, field

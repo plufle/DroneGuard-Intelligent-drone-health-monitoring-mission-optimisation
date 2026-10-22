@@ -4,6 +4,8 @@ Mirrors matlab/src/droneguard_thresholds.m number for number. Field names are ke
 identical to the MATLAB struct so the two can be compared side by side.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 

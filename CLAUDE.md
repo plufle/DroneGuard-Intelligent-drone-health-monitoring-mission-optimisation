@@ -125,6 +125,33 @@ _Last updated 2026-10-22._
 - [x] `tests/test_live.py` (9 tests). Suite: 35 in the venv; 21 + 14 skipped in plain Python
 - Screenshot `docs/images/live.png`
 
+### Done — Raspberry Pi plays the drone (`docs/pi_demo.md`)
+- [x] User chose: **Pi = virtual drone**, laptop = DroneGuard + dashboard (not Pi = DroneGuard)
+- [x] `live/autopilot.py` `fly()` shared by laptop mode and Pi: HEARTBEAT with ArduCopter modes
+      (STABILIZE idle / AUTO / RTL / LAND), NAMED_VALUE_FLOAT f_motor/f_batt truth,
+      STATUSTEXT, obeys RTL; sim-only COMMAND_LONG USER_1 fault / USER_2 start (plan packed in
+      7 params: speed, faults+10*motors, payload, endurance, distance, cruise, altitude) / USER_3 stop
+- [x] `python -m live.drone --serve --host <laptop IP>` on the Pi: waits, flies, waits again
+- [x] `live/remote.py` `PiLink` on the laptop (udpin 0.0.0.0:14550): detects the Pi by heartbeat,
+      feeds telemetry to DroneGuard only after the Pi ACKs the start
+- [x] Dashboard: "Drone runs on" laptop / Raspberry Pi, Pi status dot + exact command,
+      `/live?source=pi`; `/api/live/pi/listen`
+- [x] Verified over real Wi-Fi: DroneGuard sends RTL at 320.7 s / 3816 m as in sim. Pi receives
+      it 1.5 s (flight time) later at 20× → home 652 s 9%; 15 s later at 50× → 2%. So Pi
+      flights are capped at 20× (`PI_MAX_SPEED`, 50× button disabled)
+- [x] Launch scripts: `scripts\demo.bat` → `demo.ps1` (website in own window, reuses/asks to
+      restart an old one; `ssh pi true`, else runs user's `~/.ssh/findpi.ps1`; opens
+      `ssh -t pi ~/droneguard/pi/start_drone.sh`; browser `/live?source=pi`; `-NoPi`).
+      `scripts\deploy_pi.ps1` copies droneguard/live/tests/pi, fixes CRLF, runs Pi tests.
+      `python/pi/start_drone.sh` gets the laptop IP from `$SSH_CLIENT` → survives IP changes.
+      `.gitattributes` keeps *.sh / *.service LF. User chose ssh + script over broadcast discovery
+- [x] Python 3.8 compatible (`from __future__ import annotations` in droneguard/ and live/)
+- [x] Tests: 37 on the laptop venv; 37 (7 skipped) on the Pi
+- Pi facts: Raspberry Pi 4, Ubuntu 20.04 aarch64, Python 3.8.10, user `plufle`, code in
+  `~/droneguard`, venv `.venv` (made `--without-pip` + get-pip 3.8; no sudo; needs
+  `lxml<5.4` prebuilt). SSH alias `pi`; IP changes - user's `findpi` updates ~/.ssh/config.
+  Laptop Wi-Fi 192.168.1.5 (Private profile; python.exe allowed inbound on Private)
+
 ### P5 — software ready, hardware pending (`docs/hardware.md`, `python/deploy/`)
 - [x] Guide: ArduPilot (not PX4 - its ESC_STATUS/ESC_INFO is not decoded), TELEM2 wiring,
       SERIAL2/SR2 params, Pi UART setup, venv, systemd unit, 5-step test ladder, Drone Rules note
@@ -280,4 +307,8 @@ Any change to the model or a port must reproduce these:
   back to the sender: the drone side uses `udpin` on its own port with the ground address
   pre-seeded in `clients`. `SIO_UDP_CONNRESET` is switched off to avoid WinError 10054.
 - Background servers/processes: stop them by task ID or exact PID, never a blanket
-  `taskkill /IM python.exe`.
+  `taskkill /IM python.exe`. The user may run their own `python -m web` on :8000 - check
+  the owner (Get-NetTCPConnection) before assuming a server is ours; never kill theirs.
+- SSH to the Pi from PowerShell (Windows OpenSSH knows its key; Git Bash's ssh does not).
+  Send multi-line scripts with `Get-Content ... | ssh pi bash -s` (strip CR); inline quotes
+  get mangled by PowerShell.

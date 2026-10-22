@@ -1,5 +1,7 @@
 """Live monitoring (P4): a virtual drone speaking MAVLink, and DroneGuard watching it."""
 
+from __future__ import annotations
+
 import os
 
 # pymavlink's connections speak MAVLink 1 unless told otherwise, and MAVLink 1

@@ -4,6 +4,8 @@ Port of matlab/src/droneguard_health.m. No state, no dependencies - this is the
 part that runs on the Raspberry Pi.
 """
 
+from __future__ import annotations
+
 from typing import NamedTuple
 
 from .thresholds import Thresholds

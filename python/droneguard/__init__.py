@@ -5,6 +5,8 @@
     print(summarize(r).text())
 """
 
+from __future__ import annotations
+
 from .health import health, lin_score
 from .mission import MissionManager
 from .module import DroneGuardModule

@@ -57,6 +57,7 @@ never the blocks themselves.
 ```
 .
 ├── startup.m                         path setup - run this first
+├── scripts/                          demo.bat (one-click Pi demo), deploy_pi.ps1
 ├── matlab/
 │   ├── model/
 │   │   └── DroneGuard_Sim.slx        the Simulink model
@@ -82,6 +83,7 @@ never the blocks themselves.
 │   └── tools/compare_with_matlab.py
 └── docs/
     ├── hardware.md                   putting DroneGuard on a real drone
+    ├── pi_demo.md                    demo: the Raspberry Pi plays the drone over Wi-Fi
     ├── DroneGuard.pdf                the original project deck
     └── images/                       figures used in this README
 ```

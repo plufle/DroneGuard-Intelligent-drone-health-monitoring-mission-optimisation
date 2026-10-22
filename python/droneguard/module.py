@@ -4,6 +4,8 @@ Port of matlab/src/droneguard_module.m: health first, then the mission decision,
 with the alert passed from one to the other.
 """
 
+from __future__ import annotations
+
 from typing import NamedTuple
 
 from .health import health

@@ -11,6 +11,8 @@ are ESTIMATES from simple rules of thumb, marked as such. Replace them with
 datasheet numbers when real parts are picked.
 """
 
+from __future__ import annotations
+
 import math
 from dataclasses import dataclass
 

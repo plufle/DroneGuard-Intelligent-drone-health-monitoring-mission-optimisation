@@ -116,6 +116,67 @@ class OverUDP(unittest.TestCase):
         self.assertIsNotNone(r.home_t)
 
 
+@unittest.skipIf(live is None, "pymavlink not installed")
+class PiPlaysTheDrone(unittest.TestCase):
+    """The Raspberry Pi set-up, both halves on this machine: the drone server
+    (what the Pi runs) in a thread, DroneGuard's PiLink listening for it."""
+
+    @classmethod
+    def setUpClass(cls):
+        import threading
+        from live.drone import serve
+        from live.remote import PiLink
+        from live.session import free_udp_port
+        cls.port = free_udp_port()
+        cls.link = PiLink(cls.port, bind_host="127.0.0.1")
+        cls.stop = threading.Event()
+        cls.server = threading.Thread(target=serve, args=("127.0.0.1", cls.port, cls.stop),
+                                      kwargs={"bind_host": "127.0.0.1"}, daemon=True)
+        cls.server.start()
+        deadline = time.time() + 5
+        while not cls.link.connected and time.time() < deadline:
+            time.sleep(0.05)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.stop.set()
+        cls.server.join(timeout=3)
+        cls.link.close()
+
+    def fly(self, faults, speed=200, inject=None):
+        from live.flights import build_flight
+        self.assertTrue(self.link.connected, "the drone server's heartbeat was not heard")
+        self.link.start(build_flight(None, faults), None, faults, speed)
+        if inject:
+            time.sleep(0.3)
+            self.link.inject(inject)
+        deadline = time.time() + 30
+        time.sleep(1.0)
+        while self.link.running and time.time() < deadline:
+            time.sleep(0.1)
+        return summarize(self.link.monitor.result())
+
+    def test_reference_mission_over_the_link(self):
+        r = self.fly(faults=True)
+        self.assertEqual(r.turn_reason, ABORT_ENERGY)
+        self.assertAlmostEqual(r.turn_t, 321, delta=2)
+        self.assertIsNotNone(r.home_t)
+        self.assertEqual(self.link.commands_received, 1, "the drone acknowledged one RTL")
+        texts = " ".join(e["text"] for e in self.link.monitor.events)
+        self.assertIn("Pi: takeoff", texts)
+        self.assertIn("Pi: landed", texts)
+
+    def test_fault_injected_from_the_laptop(self):
+        # A worn motor draws more current, so DroneGuard turns back early -
+        # for energy or for health, whichever limit it hits first - and gets home.
+        r = self.fly(faults=False, inject="motor")
+        self.assertGreater(self.link.truth["motor"], 0.5, "the drone reports the injected fault")
+        self.assertIsNotNone(r.warn_t)
+        self.assertIn(r.turn_reason, (ABORT_ENERGY, ABORT_HEALTH))
+        self.assertLess(r.turn_t, 321, "turns back earlier than the healthy-start reference")
+        self.assertIsNotNone(r.home_t)
+
+
 try:
     from fastapi.testclient import TestClient
     from web.app import app

@@ -32,6 +32,12 @@
 .truth { border: 1px dashed var(--line); border-radius: 8px; padding: 12px; margin-top: 14px; }
 .link { font: 12.5px var(--mono); color: var(--muted); margin-top: 10px; }
 .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 18px; }
+.pi { display: flex; gap: 12px; align-items: flex-start; margin-top: 14px; padding: 12px;
+      border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.pi code { font: 13px var(--mono); background: var(--panel); border: 1px solid var(--line);
+           border-radius: 4px; padding: 1px 6px; overflow-wrap: anywhere; }
+.dot { width: 12px; height: 12px; border-radius: 50%; background: var(--s3); flex: none; margin-top: 5px; }
+.dot.on { background: var(--go); box-shadow: 0 0 0 4px var(--go-soft); }
 </style>
 </head>
 <body>
@@ -46,6 +52,12 @@
     <section class="card" aria-label="Flight controls">
       <p class="drone" id="droneLabel">Reference drone: 2 kg, 4S 5000 mAh, 6 km route</p>
       <div class="controls">
+        <label>Drone runs on
+          <select id="source">
+            <option value="laptop">This laptop (simulated here)</option>
+            <option value="pi">Raspberry Pi (over Wi-Fi)</option>
+          </select>
+        </label>
         <label>Faults
           <select id="scenario">
             <option value="clean">None - inject them yourself</option>
@@ -67,6 +79,13 @@
         <div class="actions">
           <button class="btn" id="startBtn">Take off</button>
           <button class="btn ghost" id="stopBtn" disabled>Stop</button>
+        </div>
+      </div>
+      <div class="pi" id="piBox" hidden>
+        <span class="dot" id="piDot"></span>
+        <div>
+          <div id="piState">Listening for the Raspberry Pi…</div>
+          <div class="sub" id="piHelp"></div>
         </div>
       </div>
       <div class="actions" style="margin-top:14px">
@@ -130,7 +149,12 @@ const C = { t: 0, dist: 1, alt: 2, speed: 3, T: 4, I: 5, V: 6, soc: 7, motor: 8,
             overall: 10, alert: 11, rth: 12, need: 13, state: 14 };
 let rows = [], events = [], status = {}, speed = 10, dirty = false;
 const qs = new URLSearchParams(location.search);
-const plan = qs.has("payload_kg") ? Object.fromEntries([...qs].map(([k, v]) => [k, Number(v)])) : null;
+const plan = qs.has("payload_kg")
+  ? Object.fromEntries([...qs].filter(([k]) => k !== "source").map(([k, v]) => [k, Number(v)])) : null;
+if (qs.get("source") === "pi") {           // /live?source=pi opens with the Raspberry Pi selected
+  $("source").value = "pi";
+  post("/api/live/pi/listen").catch((e) => alertLog(e.message));
+}
 if (plan) {
   $("droneLabel").innerHTML = `Your planned drone: ${fmt(plan.payload_kg, 1)} kg payload, ` +
     `${fmt(plan.distance_km, 1)} km each way <a href="/live">use the reference drone instead</a>`;
@@ -149,7 +173,12 @@ async function post(url, body) {
   return r.json();
 }
 $("startBtn").onclick = () => post("/api/live/start", {
-  plan, scenario: $("scenario").value, rule: $("rule").value, speed }).catch((e) => alertLog(e.message));
+  plan, scenario: $("scenario").value, rule: $("rule").value, speed, source: $("source").value })
+  .catch((e) => alertLog(e.message));
+$("source").onchange = () => {
+  if ($("source").value === "pi") post("/api/live/pi/listen").catch((e) => alertLog(e.message));
+  dirty = true;
+};
 $("stopBtn").onclick = () => post("/api/live/stop");
 $("motorBtn").onclick = () => post("/api/live/fault", { kind: "motor" }).catch((e) => alertLog(e.message));
 $("battBtn").onclick = () => post("/api/live/fault", { kind: "battery" }).catch((e) => alertLog(e.message));
@@ -172,7 +201,27 @@ function render() {
   if (!dirty) return;
   dirty = false;
   const s = status, r = rows[rows.length - 1];
+  const onPi = $("source").value === "pi";
+  $("piBox").hidden = !onPi;
+  // Over Wi-Fi, 50x is too fast: the laptop falls behind and RTL arrives late.
+  const fast = $("speed").querySelector('[data-v="50"]');
+  fast.disabled = onPi;
+  fast.title = onPi ? "Too fast over Wi-Fi - use 20x or less" : "";
+  if (onPi && speed > 20) {
+    speed = 20;
+    for (const o of $("speed").querySelectorAll("button")) o.setAttribute("aria-pressed", o.dataset.v === "20");
+  }
+  if (onPi) {
+    $("piDot").className = `dot ${s.pi_connected ? "on" : ""}`;
+    $("piState").textContent = s.pi_connected
+      ? `Raspberry Pi connected (${s.pi_address}) - ready to fly`
+      : (s.pi_listening ? "Waiting for the Raspberry Pi…" : "Starting to listen…");
+    $("piHelp").innerHTML = s.pi_connected
+      ? `It plays the drone; DroneGuard runs on this laptop.`
+      : `On the Pi (<code>ssh pi</code>) run: <code>~/droneguard/pi/start_drone.sh</code> &nbsp;·&nbsp; laptop is ${s.laptop_ip}, UDP ${s.pi_port}`;
+  }
   $("startBtn").textContent = s.running ? "Restart" : "Take off";
+  $("startBtn").disabled = onPi && !s.pi_connected;
   $("stopBtn").disabled = !s.running;
   $("motorBtn").disabled = $("battBtn").disabled = !s.running;
   if (s.label) $("droneLabel").textContent = s.label;   // what the server actually flies

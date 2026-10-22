@@ -47,6 +47,11 @@ Press **Wear the motor** or **Age the battery** mid-flight to watch DroneGuard
 notice and react. The "really wrong" box shows the true fault level, which
 DroneGuard never sees.
 
+**With a Raspberry Pi as the drone:** choose *Drone runs on: Raspberry Pi*. The
+Pi runs the virtual drone (`python -m live.drone --serve --host <laptop IP>`)
+and sends MAVLink over Wi-Fi; DroneGuard and the dashboard stay on the laptop.
+Step by step: [docs/pi_demo.md](../docs/pi_demo.md).
+
 The same two programs also run in two terminals. This is how it will run beside
 a real flight controller:
 
@@ -179,7 +184,10 @@ python tools/compare_with_matlab.py tests/matlab_dynamic.csv
 | `live/virtual_drone.py` | the simulated drone + autopilot that obeys RTL; fault injection | `DroneGuard_Sim.slx` |
 | `live/monitor.py` | DroneGuard on the Pi: MAVLink in, health + RTL out | `droneguard_module.m` |
 | `live/session.py` | joins the two: in memory (tests) or over UDP (dashboard) | — |
-| `live/drone.py` | run the virtual drone on its own | — |
+| `live/autopilot.py` | the drone's side of MAVLink: flight loop, flight modes, commands | — |
+| `live/remote.py` | DroneGuard here, the drone on the Raspberry Pi | — |
+| `live/flights.py` | builds the same drone + limits from a plan, on either machine | — |
+| `live/drone.py` | run the virtual drone on its own; `--serve` on the Pi | — |
 | `live/spec.py` | the spec file the planner writes and the Pi reads | — |
 | `web/live.py`, `web/static/live.html` | the live dashboard | `droneguard_dashboard.m` |
 | `deploy/droneguard.service` | starts DroneGuard when the Pi boots | — |

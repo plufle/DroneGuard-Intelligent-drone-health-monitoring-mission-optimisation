@@ -14,6 +14,8 @@ The ArduPilot dialect is used because it has the ESC telemetry message; it is
 a superset of the common one, so PX4 traffic parses too.
 """
 
+from __future__ import annotations
+
 import math
 from dataclasses import dataclass
 
@@ -129,3 +131,74 @@ class FrameDecoder:
                 speed=msg.vx if abs(msg.vx) >= abs(msg.vy) else msg.vy,
             )
         return None
+
+
+# ---------------------------------------------------------------------------
+# Remote control of a virtual drone running on another machine (e.g. the Pi).
+# These use MAVLink's USER commands: simulation-only, a real autopilot ignores them.
+
+CMD_INJECT_FAULT = mav.MAV_CMD_USER_1     # param1: 1 = motor, 2 = battery
+CMD_START_FLIGHT = mav.MAV_CMD_USER_2     # see start_command()
+CMD_STOP_FLIGHT = mav.MAV_CMD_USER_3
+FAULT_CODES = {"motor": 1, "battery": 2}
+
+# ArduCopter flight modes, as the real autopilot reports them in HEARTBEAT.
+MODE_IDLE, MODE_AUTO, MODE_RTL, MODE_LAND = (mav.COPTER_MODE_STABILIZE, mav.COPTER_MODE_AUTO,
+                                             mav.COPTER_MODE_RTL, mav.COPTER_MODE_LAND)
+MODE_NAMES = {MODE_IDLE: "STABILIZE (on the ground)", MODE_AUTO: "AUTO (mission)",
+              MODE_RTL: "RTL (returning home)", MODE_LAND: "LAND (landed)"}
+FRAME_TYPE = {4: mav.MAV_TYPE_QUADROTOR, 6: mav.MAV_TYPE_HEXAROTOR, 8: mav.MAV_TYPE_OCTOROTOR}
+
+
+def _command(cmd: int, *params: float) -> mav.MAVLink_command_long_message:
+    p = list(params) + [0.0] * (7 - len(params))
+    return mav.MAVLink_command_long_message(DRONE_SYSTEM, mav.MAV_COMP_ID_AUTOPILOT1, cmd, 0, *p)
+
+
+def start_command(plan: dict | None, faults: bool, speed: float) -> mav.MAVLink_command_long_message:
+    """Pack a whole flight request into one COMMAND_LONG (7 numbers):
+    speed, faults + 10*motors, payload_kg (0 = reference drone), endurance_min,
+    distance_km, cruise_mps, altitude_m."""
+    plan = plan or {}
+    motors = int(plan.get("motors") or 0)
+    return _command(CMD_START_FLIGHT, speed, float(faults) + 10 * motors,
+                    plan.get("payload_kg", 0.0), plan.get("endurance_min", 0.0),
+                    plan.get("distance_km", 0.0), plan.get("cruise_mps", 0.0),
+                    plan.get("altitude_m", 0.0))
+
+
+def parse_start(msg) -> tuple[dict | None, bool, float]:
+    """The other half of start_command(): (plan or None, faults, speed)."""
+    faults = int(round(msg.param2)) % 10 == 1
+    motors = int(round(msg.param2)) // 10
+    if msg.param3 <= 0:
+        return None, faults, msg.param1
+    plan = {"payload_kg": msg.param3, "endurance_min": msg.param4, "distance_km": msg.param5,
+            "cruise_mps": msg.param6, "altitude_m": msg.param7, "motors": motors or None}
+    return plan, faults, msg.param1
+
+
+def fault_command(kind: str) -> mav.MAVLink_command_long_message:
+    return _command(CMD_INJECT_FAULT, FAULT_CODES[kind])
+
+
+def stop_command() -> mav.MAVLink_command_long_message:
+    return _command(CMD_STOP_FLIGHT)
+
+
+def heartbeat(mode: int, flying: bool, n_motors: int = 4) -> mav.MAVLink_heartbeat_message:
+    base = mav.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED | (mav.MAV_MODE_FLAG_SAFETY_ARMED if flying else 0)
+    return mav.MAVLink_heartbeat_message(
+        FRAME_TYPE.get(n_motors, mav.MAV_TYPE_QUADROTOR), mav.MAV_AUTOPILOT_ARDUPILOTMEGA,
+        base, mode, mav.MAV_STATE_ACTIVE if flying else mav.MAV_STATE_STANDBY, 3)
+
+
+def truth_messages(t: float, faults: dict) -> list:
+    """Simulation-only ground truth, so a dashboard can show what is really wrong."""
+    ms = int(round(t * 1000))
+    return [mav.MAVLink_named_value_float_message(ms, b"f_motor", faults["motor"]),
+            mav.MAVLink_named_value_float_message(ms, b"f_batt", faults["battery"])]
+
+
+def status_text(text: str, severity: int = mav.MAV_SEVERITY_INFO) -> mav.MAVLink_statustext_message:
+    return mav.MAVLink_statustext_message(severity, text[:50].encode())

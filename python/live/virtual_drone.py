@@ -8,6 +8,8 @@ DroneGuard exists; it just reports telemetry and takes commands.
 Faults can be injected while it flies, to watch DroneGuard react.
 """
 
+from __future__ import annotations
+
 from dataclasses import replace
 
 from droneguard.params import SimParams

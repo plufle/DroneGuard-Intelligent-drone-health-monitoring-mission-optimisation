@@ -19,6 +19,8 @@ back onto exactly the reference parameters.
     python -m droneguard.check --payload-kg 2 --endurance-min 15 --distance-km 3
 """
 
+from __future__ import annotations
+
 import argparse
 from dataclasses import dataclass, replace
 

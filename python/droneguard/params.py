@@ -4,6 +4,8 @@ Mirrors matlab/sim/droneguard_params.m. Change a value with
 dataclasses.replace(SimParams(), k_eff_fault=0.8) rather than editing defaults.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 from .thresholds import Thresholds

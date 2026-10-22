@@ -5,6 +5,8 @@ Port of matlab/src/droneguard_mission.m. The MATLAB version keeps its memory in
 two simulations can run side by side without sharing state.
 """
 
+from __future__ import annotations
+
 from typing import NamedTuple
 
 from .health import ALARM

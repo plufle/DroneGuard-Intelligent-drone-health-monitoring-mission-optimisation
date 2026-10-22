@@ -6,6 +6,8 @@
     add --plot to see the graphs (needs matplotlib)
 """
 
+from __future__ import annotations
+
 import argparse
 from dataclasses import replace
 

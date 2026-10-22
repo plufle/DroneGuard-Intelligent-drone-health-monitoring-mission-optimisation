@@ -4,6 +4,8 @@ Same rules as matlab/sim/droneguard_missionend.m and the console summary at the
 end of matlab/sim/droneguard_plot.m.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 import numpy as np
