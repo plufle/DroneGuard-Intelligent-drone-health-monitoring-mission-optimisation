@@ -70,14 +70,30 @@ never the blocks themselves.
 │       ├── droneguard_run.m
 │       ├── droneguard_compare.m
 │       ├── droneguard_plot.m
-│       └── droneguard_missionend.m
+│       ├── droneguard_dashboard.m
+│       ├── droneguard_missionend.m
+│       └── droneguard_export.m       save a mission to CSV for the Python check
+├── python/                           the same module + simulation in Python
+│   ├── droneguard/                   module, simulation, sizing engine, design check
+│   ├── live/                         MAVLink: virtual drone + the monitor that runs on the Pi
+│   ├── web/                          planner + live dashboard (python -m web)
+│   ├── deploy/                       Raspberry Pi service file
+│   ├── tests/                        must reproduce the MATLAB results
+│   └── tools/compare_with_matlab.py
 └── docs/
+    ├── hardware.md                   putting DroneGuard on a real drone
     ├── DroneGuard.pdf                the original project deck
     └── images/                       figures used in this README
 ```
 
-Everything MATLAB-side lives under `matlab/`, leaving room for a `pi/` or
-`firmware/` folder beside it when the algorithm is deployed for real.
+Everything MATLAB-side lives under `matlab/`. `python/` is a line-for-line
+port of the module and the simulated drone. On top of it sit a sizing engine
+(payload and hover time in, parts list out), a design check that flies the
+suggested drone on its trip and returns GO / NO-GO, a planning website for
+both, and a live monitor: a virtual drone sends real MAVLink telemetry and
+DroneGuard watches it exactly as it will from a Raspberry Pi beside a Pixhawk
+([`docs/hardware.md`](docs/hardware.md)). Simulink stays the reference, and the Python tests check
+that the port gives the same answers ([`python/README.md`](python/README.md)).
 
 The `src` / `sim` split inside it is the point of the layout: **everything in
 `matlab/src` is plain MATLAB with no toolbox calls and no Simulink dependency**,
@@ -101,6 +117,8 @@ pictures.
 | `matlab/sim/droneguard_plot.m` | The four-panel mission figure and the console summary. |
 | `matlab/sim/droneguard_dashboard.m` | Animated playback of a mission: side-on scene, an FPV nose camera flying down a city street, and gauges updating as it flies. |
 | `matlab/sim/droneguard_missionend.m` | Finds the sample where a mission genuinely ended (home, or battery empty) so plots do not show meaningless tails. |
+| `matlab/sim/droneguard_export.m` | Saves one simulated mission to CSV so the Python port can be checked against it sample by sample. |
+| `python/` | The Python port. See [`python/README.md`](python/README.md). |
 | `docs/DroneGuard.pdf` | The original project deck this is built from. |
 
 ---

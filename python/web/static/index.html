@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DroneGuard Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Drone<span>Guard</span> Planner</h1>
+    <div class="tag">Size the drone, then fly it in simulation before you buy the parts.</div>
+    <nav><a href="/" aria-current="page">Planner</a><a href="/live">Live monitor</a></nav>
+  </header>
+
+  <nav class="tabs" id="tabs" role="tablist" aria-label="Application"></nav>
+
+  <div class="layout">
+    <section class="card" aria-label="Mission inputs">
+      <h2>Mission</h2>
+      <div id="fields"></div>
+      <div class="field">
+        <label>Motors <output id="motorsOut">lightest</output></label>
+        <div class="seg" id="motors">
+          <button data-v="" aria-pressed="true">auto</button>
+          <button data-v="4">4</button><button data-v="6">6</button><button data-v="8">8</button>
+        </div>
+        <div class="hint">Auto tries 4, 6 and 8 and keeps the lightest design that works.</div>
+      </div>
+      <h2 style="margin-top:22px">About this application</h2>
+      <ul class="notes" id="notes"></ul>
+    </section>
+
+    <div class="stack">
+      <section class="verdict busy" id="verdict" aria-live="polite">
+        <div class="word">Planning…</div>
+      </section>
+
+      <div class="actions" id="actions" hidden>
+        <a class="btn" id="flyLive" href="/live">Fly it live →</a>
+        <a class="btn ghost" id="specLink" href="/api/spec" download>Spec file for the Pi</a>
+      </div>
+
+      <div class="row2">
+        <section class="card">
+          <h2>Parts list</h2>
+          <div class="scroll"><table id="parts"></table></div>
+          <p class="sub" id="costNote"></p>
+        </section>
+        <section class="card">
+          <h2>Key numbers</h2>
+          <div class="stats" id="stats"></div>
+          <h2 style="margin-top:20px">Where the weight goes</h2>
+          <div class="bar" id="massBar"></div>
+          <div class="legend" id="massLegend"></div>
+        </section>
+      </div>
+
+      <section class="card" id="chartsCard">
+        <h2>Simulated trip</h2>
+        <div class="charts">
+          <div>
+            <div class="legend" id="lg1"></div>
+            <div class="chart"><canvas id="c1" aria-label="Distance from base over time"></canvas></div>
+          </div>
+          <div>
+            <div class="legend" id="lg2"></div>
+            <div class="chart"><canvas id="c2" aria-label="Charge and charge needed to get home"></canvas></div>
+          </div>
+          <div>
+            <div class="legend" id="lg3"></div>
+            <div class="chart"><canvas id="c3" aria-label="Health score in the worn-out flight"></canvas></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <footer>
+    Parts come from Table 2 of Vishwath et al. (2022); their weights are estimates. The worn-out flight wears the
+    motor and ages the battery until both are fully degraded by the time the drone is due home.
+    Nothing you enter is stored.
+  </footer>
+</div>
+
+<script src="/static/charts.js"></script>
+<script>
+const FIELDS = [
+  ["payload_kg", "Payload", "What it carries"],
+  ["endurance_min", "Hover time", "Sizes the battery (on 80% of the pack)"],
+  ["distance_km", "Distance", "One way, base to drop point"],
+  ["cruise_mps", "Cruise speed", null],
+  ["altitude_m", "Altitude", null],
+];
+const state = { app: "delivery", motors: null, values: {} };
+let apps = [], last = null, inflight = null, timer = null;
+
+async function boot() {
+  apps = await (await fetch("/api/applications")).json();
+  const tabs = $("tabs");
+  for (const a of apps.filter((a) => a.available)) {   // only what the planner supports today
+    const b = document.createElement("button");
+    b.className = "tab"; b.role = "tab"; b.textContent = a.name;
+    b.setAttribute("aria-selected", a.key === state.app);
+    b.title = a.summary;
+    tabs.append(b);
+  }
+  buildFields(apps.find((a) => a.key === state.app));
+  for (const b of $("motors").querySelectorAll("button")) {
+    b.onclick = () => {
+      for (const o of $("motors").querySelectorAll("button")) o.setAttribute("aria-pressed", o === b);
+      state.motors = b.dataset.v ? Number(b.dataset.v) : null;
+      $("motorsOut").textContent = state.motors ? `${state.motors} motors` : "lightest";
+      schedule(0);
+    };
+  }
+  schedule(0);
+}
+
+function buildFields(a) {
+  const box = $("fields"); box.innerHTML = "";
+  for (const [key, label, hint] of FIELDS) {
+    const r = a[key];
+    state.values[key] = r.default;
+    const f = document.createElement("div"); f.className = "field";
+    f.innerHTML = `<label for="${key}">${label} <output id="${key}Out"></output></label>
+      <input type="range" id="${key}" min="${r.lo}" max="${r.hi}" step="${r.step}" value="${r.default}">
+      ${hint ? `<div class="hint">${hint}</div>` : ""}`;
+    box.append(f);
+    const inp = f.querySelector("input"), out = f.querySelector("output");
+    const show = () => { out.textContent = `${fmt(inp.value, r.step < 1 ? 1 : 0)} ${r.unit}`; };
+    inp.oninput = () => { state.values[key] = Number(inp.value); show(); schedule(250); };
+    show();
+  }
+  $("notes").innerHTML = a.notes.map((n) => `<li>${n}</li>`).join("");
+}
+
+function query() {
+  const q = new URLSearchParams(state.values);
+  if (state.motors) q.set("motors", state.motors);
+  return q.toString();
+}
+
+function schedule(ms) { clearTimeout(timer); timer = setTimeout(run, ms); }
+
+async function run() {
+  if (inflight) inflight.abort();
+  inflight = new AbortController();
+  $("verdict").classList.add("busy");
+  try {
+    const res = await fetch("/api/plan", {
+      method: "POST", headers: { "Content-Type": "application/json" }, signal: inflight.signal,
+      body: JSON.stringify({ application: state.app, motors: state.motors, ...state.values }),
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+    last = await res.json();
+    render(last);
+  } catch (e) {
+    if (e.name !== "AbortError") {
+      $("verdict").className = "verdict nogo";
+      $("verdict").innerHTML = `<div class="word">Error</div><div class="err">${e.message}</div>`;
+    }
+  }
+}
+
+function render(p) {
+  const d = p.design, c = p.check, v = $("verdict");
+  if (!d.converged) {
+    v.className = "verdict nogo";
+    v.innerHTML = `<div class="word">CAN'T BUILD IT</div>
+      <div>No combination of parts in the catalogue can do this.</div>
+      <ul>${d.problems.map((x) => `<li>${x}</li>`).join("")}</ul>`;
+    $("parts").innerHTML = ""; $("stats").innerHTML = ""; $("massBar").innerHTML = "";
+    $("massLegend").innerHTML = ""; $("costNote").textContent = "";
+    $("chartsCard").hidden = true; $("actions").hidden = true;
+    return;
+  }
+  const cls = { "GO": "go", "GO WITH CAUTION": "caution", "NO-GO": "nogo" }[c.verdict];
+  const h = c.healthy, s = c.stressed;
+  const lines = [...c.reasons, ...c.cautions];
+  const tripLine = (x, who) => x.home_t != null
+    ? `${who}: home at ${fmt(x.home_t)} s with ${fmt(100 * x.home_soc)}% charge` +
+      (x.turn_reason && !x.turn_reason.startsWith("MISSION") ? ` (turned back early at ${fmt(x.turn_dist / 1000, 1)} km)` : "")
+    : `${who}: did not get home`;
+  v.className = `verdict ${cls}`;
+  v.innerHTML = `<div class="word">${c.verdict}</div>
+    <div>${tripLine(h, "Healthy")} · ${tripLine(s, "Worn out")}</div>
+    ${lines.length ? `<ul>${lines.map((x) => `<li>${x}</li>`).join("")}</ul>` : ""}`;
+  $("actions").hidden = false;
+  $("flyLive").href = `/live?${query()}`;
+  $("specLink").href = `/api/spec?${query()}`;
+
+  // Parts list: what to buy and what each part weighs.
+  const m = d.motor, b = d.battery, n = d.n_motors, g = d.masses_g;
+  const rows = [
+    [`Motor ×${n}`, `${m.name.split(" + ")[0]}`, g.motors],
+    [`Propeller ×${n}`, `${m.prop}"`, g.props],
+    [`ESC ×${n}`, `${d.esc_A} A`, g.ESCs],
+    ["Battery", `${b.cells}S ${fmt(b.mAh)} mAh ${b.C ?? "—"}C`, g.battery],
+    ["Frame", `${n} arms`, g.frame],
+    ["Flight controller + avionics", "FC, GPS, receiver, Pi", g.avionics],
+  ];
+  $("parts").innerHTML = `<thead><tr><th>Part</th><th>Spec</th><th class="num">Weight (g)</th></tr></thead>
+    <tbody>${rows.map(([a, s_, w]) => `<tr><td>${a}</td><td>${s_}</td><td class="num">${fmt(w)}</td></tr>`).join("")}</tbody>
+    <tfoot><tr><td>Total</td><td>+ ${fmt(g.payload)} g payload</td><td class="num">${fmt(d.auw_kg * 1000)}</td></tr></tfoot>`;
+  $("costNote").textContent = "Weights are estimates from part sizes - swap in datasheet weights when you pick real parts.";
+
+  const stat = (val, label) => `<div class="stat"><b>${val}</b><span>${label}</span></div>`;
+  $("stats").innerHTML = [
+    stat(`${fmt(d.auw_kg, 2)} kg`, "all-up weight"),
+    stat(`${fmt(d.thrust_to_weight, 2)} : 1`, "thrust : weight"),
+    stat(`${fmt(d.endurance_min, 1)} min`, "hover time"),
+    stat(c.max_distance_km != null ? `${fmt(c.max_distance_km, 1)} km` : "—", "furthest one-way trip"),
+    stat(`${fmt(d.hover.power_W)} W`, `hover, ${fmt(d.hover.current_A, 1)} A`),
+    stat(`${fmt(d.full_throttle.current_A)} A`, "full-throttle current"),
+  ].join("");
+
+  const parts = [["payload", "--s1"], ["battery", "--accent"], ["motors", "--s3"], ["frame", "--s4"],
+                 ["ESCs", "--warn"], ["props", "--go"], ["avionics", "--nogo"]];
+  const total = d.auw_kg * 1000;
+  $("massBar").innerHTML = parts.map(([k, col]) => `<div title="${k} ${fmt(g[k])} g" style="flex:${g[k]};background:var(${col})"></div>`).join("");
+  $("massLegend").innerHTML = parts.map(([k, col]) => `<span><i style="background:var(${col})"></i>${k} ${fmt(100 * g[k] / total)}%</span>`).join("");
+
+  $("chartsCard").hidden = false;
+  drawCharts(p);
+}
+
+function drawCharts(p) {
+  const H = p.series.healthy, S = p.series.stressed;
+  const s1 = css("--s1"), s2 = css("--s2");
+  // Healthy is drawn wide underneath: when both flights take the same path it
+  // still shows round the worn-out line instead of vanishing under it.
+  legend("lg1", [["Healthy", s1], ["Worn out", s2]], "Distance from base [km]");
+  chart("c1", [{ x: H.t, y: H.dist_km, color: s1, width: 6 }, { x: S.t, y: S.dist_km, color: s2 }],
+        { lines: [{ y: state.values.distance_km, label: "drop point" }] });
+  legend("lg2", [["Charge, healthy", s1], ["Charge, worn out", s2], ["Charge needed to get home", css("--s3"), true]], "Battery [%]");
+  chart("c2", [{ x: H.t, y: H.soc, color: s1 }, { x: S.t, y: S.soc, color: s2 },
+               { x: S.t, y: S.rth, color: css("--s3"), dash: true }],
+        { yMin: 0, yMax: 100, lines: [{ y: 10, label: "reserve" }] });
+  // Overall = the worse of motor and battery, so it always lies on one of them:
+  // draw it as a wide pale band underneath, the components thin on top.
+  legend("lg3", [["Overall (the worse of the two)", css("--s3")], ["Motor", s1], ["Battery", s2]], "Health score, worn-out flight");
+  chart("c3", [{ x: S.t, y: S.overall, color: css("--s3"), width: 9, alpha: 0.35 },
+               { x: S.t, y: S.motor, color: s1 }, { x: S.t, y: S.battery, color: s2 }],
+        { yMin: 0, yMax: 100, lines: [{ y: 70, label: "WARN" }, { y: 40, label: "ALARM" }], xlabel: "time [s]" });
+}
+
+window.addEventListener("resize", () => last && last.series && drawCharts(last));
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => last && last.series && drawCharts(last));
+boot();
+</script>
+</body>
+</html>

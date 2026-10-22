@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DroneGuard Live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+.controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); gap: 14px; align-items: end; }
+.controls label { display: grid; gap: 4px; font-weight: 500; font-size: 14px; }
+.drone { font-weight: 600; margin: 0 0 14px; }
+.drone a { font-weight: 400; color: var(--muted); margin-left: 8px; }
+.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 18px; }
+.badge { border-radius: 10px; border: 1px solid var(--line); padding: 14px 16px; display: grid; gap: 2px; }
+.badge .word { font: 700 30px var(--sans); letter-spacing: 0.03em; }
+.badge.go { background: var(--go-soft); border-color: var(--go); } .badge.go .word { color: var(--go); }
+.badge.caution { background: var(--warn-soft); border-color: var(--warn); } .badge.caution .word { color: var(--warn); }
+.badge.nogo { background: var(--nogo-soft); border-color: var(--nogo); } .badge.nogo .word { color: var(--nogo); }
+.big { font: 500 30px var(--mono); line-height: 1.15; }
+.lbl { color: var(--muted); font-size: 12.5px; }
+.meter { display: grid; grid-template-columns: 70px minmax(0, 1fr) 44px; gap: 10px; align-items: center; margin-bottom: 10px; }
+.meter .track { height: 12px; background: var(--grid); border-radius: 6px; overflow: hidden; }
+.meter .fill { height: 100%; border-radius: 6px; transition: width 0.15s linear; }
+.meter b { font: 500 15px var(--mono); text-align: right; }
+.log { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 330px; overflow-y: auto; font-size: 14px; }
+.log li { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; padding: 6px 8px; border-radius: 6px; border-left: 3px solid var(--line); background: var(--bg); }
+.log li time { font-family: var(--mono); color: var(--muted); }
+.log li.warn { border-left-color: var(--warn); } .log li.alarm { border-left-color: var(--nogo); }
+.log li.ok { border-left-color: var(--go); }
+.truth { border: 1px dashed var(--line); border-radius: 8px; padding: 12px; margin-top: 14px; }
+.link { font: 12.5px var(--mono); color: var(--muted); margin-top: 10px; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Drone<span>Guard</span> Live</h1>
+    <div class="tag">A virtual drone sends real MAVLink telemetry; DroneGuard watches it as it would from a Raspberry Pi.</div>
+    <nav><a href="/">Planner</a><a href="/live" aria-current="page">Live monitor</a></nav>
+  </header>
+
+  <div class="stack">
+    <section class="card" aria-label="Flight controls">
+      <p class="drone" id="droneLabel">Reference drone: 2 kg, 4S 5000 mAh, 6 km route</p>
+      <div class="controls">
+        <label>Faults
+          <select id="scenario">
+            <option value="clean">None - inject them yourself</option>
+            <option value="faults">Scheduled: motor wears, then battery ages</option>
+          </select>
+        </label>
+        <label>Return-home rule
+          <select id="rule">
+            <option value="dynamic">DroneGuard (health-aware)</option>
+            <option value="fixed">Naive: always at 25%</option>
+          </select>
+        </label>
+        <label>Speed
+          <div class="seg" id="speed">
+            <button data-v="1">1×</button><button data-v="5">5×</button>
+            <button data-v="10" aria-pressed="true">10×</button><button data-v="20">20×</button><button data-v="50">50×</button>
+          </div>
+        </label>
+        <div class="actions">
+          <button class="btn" id="startBtn">Take off</button>
+          <button class="btn ghost" id="stopBtn" disabled>Stop</button>
+        </div>
+      </div>
+      <div class="actions" style="margin-top:14px">
+        <button class="btn ghost" id="motorBtn" disabled>Wear the motor</button>
+        <button class="btn ghost" id="battBtn" disabled>Age the battery</button>
+        <span class="sub" style="align-self:center">Each fault grows from now until fully worn.</span>
+      </div>
+    </section>
+
+    <section class="strip" aria-live="polite">
+      <div class="badge" id="badge"><span class="lbl">DroneGuard alert</span><span class="word" id="alertWord">—</span></div>
+      <div class="card"><div class="lbl">Overall health</div><div class="big" id="overall">—</div><div class="lbl">the worse of motor and battery</div></div>
+      <div class="card"><div class="lbl">Phase</div><div class="big" id="phase" style="font-size:22px">waiting</div><div class="lbl" id="timeDist">—</div></div>
+      <div class="card"><div class="lbl">Charge left / needed to get home</div><div class="big" id="charge">—</div><div class="lbl" id="chargeSub">needed includes the reserve</div></div>
+    </section>
+
+    <div class="two">
+      <section class="card">
+        <h2>Health</h2>
+        <div id="meters"></div>
+        <h2 style="margin-top:18px">Telemetry received</h2>
+        <div class="scroll"><table id="telem"></table></div>
+        <div class="truth">
+          <h2 style="margin-bottom:8px">Really wrong (virtual drone only)</h2>
+          <div class="sub" style="margin-bottom:8px">DroneGuard cannot see this - it has to work it out from the telemetry.</div>
+          <div id="truth"></div>
+        </div>
+        <div class="link" id="link">not connected</div>
+      </section>
+      <section class="card">
+        <h2>Events</h2>
+        <ul class="log" id="log"><li><time>—</time><span>Press Take off.</span></li></ul>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2>Flight so far</h2>
+      <div class="charts">
+        <div><div class="legend" id="lg1"></div><div class="chart"><canvas id="c1" aria-label="Health score over time"></canvas></div></div>
+        <div><div class="legend" id="lg2"></div><div class="chart"><canvas id="c2" aria-label="Charge and charge needed to get home"></canvas></div></div>
+        <div class="two">
+          <div><div class="legend" id="lg3"></div><div class="chart short"><canvas id="c3" aria-label="Motor current"></canvas></div></div>
+          <div><div class="legend" id="lg4"></div><div class="chart short"><canvas id="c4" aria-label="Motor temperature"></canvas></div></div>
+        </div>
+        <div><div class="legend" id="lg5"></div><div class="chart short"><canvas id="c5" aria-label="Distance from home"></canvas></div></div>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    The virtual drone and DroneGuard run as two separate programs joined by MAVLink over UDP,
+    the same way DroneGuard will sit beside a Pixhawk. It sends RETURN_TO_LAUNCH when it decides
+    the drone must come home. Fault injection is the only thing here a real drone wouldn't have.
+  </footer>
+</div>
+
+<script src="/static/charts.js"></script>
+<script>
+// Columns sent by /ws/live, one row per 0.1 s of flight.
+const C = { t: 0, dist: 1, alt: 2, speed: 3, T: 4, I: 5, V: 6, soc: 7, motor: 8, batt: 9,
+            overall: 10, alert: 11, rth: 12, need: 13, state: 14 };
+let rows = [], events = [], status = {}, speed = 10, dirty = false;
+const qs = new URLSearchParams(location.search);
+const plan = qs.has("payload_kg") ? Object.fromEntries([...qs].map(([k, v]) => [k, Number(v)])) : null;
+if (plan) {
+  $("droneLabel").innerHTML = `Your planned drone: ${fmt(plan.payload_kg, 1)} kg payload, ` +
+    `${fmt(plan.distance_km, 1)} km each way <a href="/live">use the reference drone instead</a>`;
+}
+
+for (const b of $("speed").querySelectorAll("button")) {
+  b.onclick = () => {
+    for (const o of $("speed").querySelectorAll("button")) o.setAttribute("aria-pressed", o === b);
+    speed = Number(b.dataset.v);
+  };
+}
+
+async function post(url, body) {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || r.statusText); }
+  return r.json();
+}
+$("startBtn").onclick = () => post("/api/live/start", {
+  plan, scenario: $("scenario").value, rule: $("rule").value, speed }).catch((e) => alertLog(e.message));
+$("stopBtn").onclick = () => post("/api/live/stop");
+$("motorBtn").onclick = () => post("/api/live/fault", { kind: "motor" }).catch((e) => alertLog(e.message));
+$("battBtn").onclick = () => post("/api/live/fault", { kind: "battery" }).catch((e) => alertLog(e.message));
+function alertLog(text) { events.push({ t: status.t ?? 0, level: "alarm", text }); dirty = true; }
+
+function connect() {
+  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/live`);
+  ws.onmessage = (ev) => {
+    const m = JSON.parse(ev.data);
+    if (m.reset) { rows = []; events = []; }
+    if (m.rows && m.rows.length) rows.push(...m.rows);
+    if (m.events && m.events.length) events.push(...m.events);
+    status = m.status; dirty = true;
+  };
+  ws.onclose = () => { $("link").textContent = "dashboard disconnected - retrying"; setTimeout(connect, 1000); };
+}
+
+function render() {
+  requestAnimationFrame(render);
+  if (!dirty) return;
+  dirty = false;
+  const s = status, r = rows[rows.length - 1];
+  $("startBtn").textContent = s.running ? "Restart" : "Take off";
+  $("stopBtn").disabled = !s.running;
+  $("motorBtn").disabled = $("battBtn").disabled = !s.running;
+  if (s.label) $("droneLabel").textContent = s.label;   // what the server actually flies
+
+  if (r) {
+    const a = r[C.alert];
+    $("badge").className = `badge ${["go", "caution", "nogo"][a]}`;
+    $("alertWord").textContent = ["OK", "WARN", "ALARM"][a];
+    $("overall").textContent = fmt(r[C.overall]);
+    const st = r[C.soc] <= 0 ? "battery empty" : ["outbound", "returning home", "home"][r[C.state]];
+    $("phase").textContent = st;
+    $("timeDist").textContent = `t = ${fmt(r[C.t])} s · ${fmt(r[C.dist] / 1000, 2)} km from home · ${fmt(r[C.alt])} m up`;
+    $("charge").textContent = `${fmt(r[C.soc])}% / ${fmt(r[C.rth])}%`;
+    $("chargeSub").textContent = r[C.state] === 0
+      ? (r[C.soc] - r[C.rth] > 0 ? `${fmt(r[C.soc] - r[C.rth])} points left before it must turn` : "must turn now")
+      : "needed includes the reserve";
+    const meter = (label, v, col) => `<div class="meter"><span>${label}</span><div class="track"><div class="fill" style="width:${Math.max(0, v)}%;background:${col}"></div></div><b>${fmt(v)}</b></div>`;
+    const hc = (v) => v < s.alarm ? css("--nogo") : v < s.warn ? css("--warn") : css("--go");
+    $("meters").innerHTML = meter("Motor", r[C.motor], hc(r[C.motor])) + meter("Battery", r[C.batt], hc(r[C.batt])) +
+                            meter("Overall", r[C.overall], hc(r[C.overall]));
+    const tr = (k, v) => `<tr><td>${k}</td><td class="num">${v}</td></tr>`;
+    $("telem").innerHTML = "<tbody>" +
+      tr("Motor temperature", s.no_temperature ? "not reported" : `${fmt(r[C.T])} °C`) +
+      tr("Motor current", `${fmt(r[C.I], 1)} A`) + tr("Pack voltage", `${fmt(r[C.V], 2)} V`) +
+      tr("Charge", `${fmt(r[C.soc], 1)}%`) + tr("Speed", `${fmt(r[C.speed], 1)} m/s`) + "</tbody>";
+  }
+  if (s.faults) {
+    const f = s.faults;
+    const meter = (label, v) => `<div class="meter"><span>${label}</span><div class="track"><div class="fill" style="width:${100 * v}%;background:var(--s3)"></div></div><b>${fmt(100 * v)}%</b></div>`;
+    $("truth").innerHTML = meter("Motor", f.motor) + meter("Battery", f.battery);
+    $("link").textContent = `MAVLink UDP :${s.port} · ${fmt(s.messages)} messages · ` +
+      (s.last_heard_s == null ? "nothing heard yet" : `last ${fmt(s.last_heard_s, 1)} s ago`) +
+      (s.rtl_sent_at != null ? ` · RTL sent at ${fmt(s.rtl_sent_at, 1)} s, autopilot accepted ${s.commands_received}` : "") +
+      ` · ${s.running ? `flying at ${s.speed}×` : "stopped"}`;
+  }
+  $("log").innerHTML = events.length
+    ? [...events].reverse().map((e) => `<li class="${e.level}"><time>${fmt(e.t, 1)} s</time><span>${e.text}</span></li>`).join("")
+    : `<li><time>—</time><span>Press Take off.</span></li>`;
+  drawCharts();
+}
+
+function col(k) { return rows.map((r) => r[k]); }
+function drawCharts() {
+  const t = col(C.t), s1 = css("--s1"), s2 = css("--s2"), s3 = css("--s3");
+  const xMax = Math.max(60, t.length ? t[t.length - 1] : 0);
+  const marks = status.rtl_sent_at != null ? [{ x: status.rtl_sent_at, label: "RTL sent" }] : [];
+  legend("lg1", [["Overall", s3], ["Motor", s1], ["Battery", s2]], "Health score");
+  chart("c1", [{ x: t, y: col(C.overall), color: s3, width: 9, alpha: 0.35 },
+               { x: t, y: col(C.motor), color: s1 }, { x: t, y: col(C.batt), color: s2 }],
+        { yMin: 0, yMax: 100, xMax, marks, lines: [{ y: status.warn ?? 70, label: "WARN" }, { y: status.alarm ?? 40, label: "ALARM" }] });
+  legend("lg2", [["Charge left", s1], ["Needed to get home", s3, true]], "Battery [%]");
+  chart("c2", [{ x: t, y: col(C.soc), color: s1 }, { x: t, y: col(C.rth), color: s3, dash: true }],
+        { yMin: 0, yMax: 100, xMax, marks, lines: [{ y: 100 * (status.reserve ?? 0.1), label: "reserve" }] });
+  legend("lg3", [["Current", s2]], "Motor current [A]");
+  chart("c3", [{ x: t, y: col(C.I), color: s2 }], { xMax, marks });
+  legend("lg4", [["Temperature", s2]], "Motor temperature [°C]");
+  chart("c4", [{ x: t, y: col(C.T), color: s2 }], { xMax, marks });
+  legend("lg5", [["Distance", s1]], "Distance from home [km]");
+  chart("c5", [{ x: t, y: col(C.dist).map((d) => d / 1000), color: s1 }],
+        { xMax, marks, xlabel: "flight time [s]", lines: status.range_m ? [{ y: status.range_m / 1000, label: "drop point" }] : [] });
+}
+
+window.addEventListener("resize", () => { dirty = true; });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { dirty = true; });
+connect();
+render();
+</script>
+</body>
+</html>

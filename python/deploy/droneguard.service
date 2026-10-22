@@ -1,0 +1,22 @@
+# systemd unit: start DroneGuard on the Raspberry Pi at boot.
+#
+#   sudo cp droneguard.service /etc/systemd/system/
+#   sudo systemctl enable --now droneguard
+#   journalctl -u droneguard -f          # watch what it says
+#
+# Assumes the repo's python/ folder is at /home/pi/droneguard and its venv at
+# /home/pi/droneguard/.venv, and the planner's spec file is spec.json beside it.
+
+[Unit]
+Description=DroneGuard health monitor (MAVLink companion)
+After=network.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/droneguard
+ExecStart=/home/pi/droneguard/.venv/bin/python -m live.monitor --connect /dev/serial0 --baud 921600 --spec spec.json
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

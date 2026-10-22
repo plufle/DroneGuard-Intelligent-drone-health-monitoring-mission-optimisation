@@ -1,0 +1,4 @@
+numpy>=1.24
+matplotlib>=3.7            # only for --plot
+fastapi[standard]>=0.115   # the planning website (includes uvicorn and httpx)
+pymavlink>=2.4.40          # live monitoring: MAVLink to and from the drone

@@ -27,6 +27,15 @@ slprj_*/
 matlab.mat
 octave-workspace
 
+# ---- Python ----
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+# missions exported from Simulink for comparison (regenerate with droneguard_export)
+python/tests/matlab_*.csv
+
 # ---- OS clutter ----
 .DS_Store
 Thumbs.db
