@@ -126,7 +126,7 @@ Six panels, all updating together:
 | Panel | Shows |
 |---|---|
 | Mission (top left) | Side-on view. The drone glyph flies out and back, trailing its path. The **red shaded region is everywhere it could no longer get home from** — it creeps inward as the motor degrades. The turn happens when the drone touches that boundary. |
-| Down-looking view | Ground scrolling past at true ground speed. |
+| FPV nose camera | A real perspective camera at the drone's own position, looking where it is going, flying down a street between buildings. Turns around with the drone. |
 | Status panel | Live numbers, and a lamp that goes green → amber → red with the alert level. |
 | Health / Charge / Motor | The same traces as `droneguard_run`, drawn progressively as the flight unfolds. |
 
@@ -140,11 +140,19 @@ logged result is replayed. The solver does not run in wall-clock time, so there
 is nothing to watch while it solves. What you see is the real simulated flight,
 frame for frame.
 
-**The camera panel is scenery, not sensor data.** The model is longitudinal and
-vertical only — there is no 3D world in the physics and no camera. That panel is
-rendered *from position*: the ground scrolls at the true ground speed and the
-field of view widens correctly with altitude, but the terrain itself is
-synthetic. Nothing else in the project depends on it.
+**The FPV is a real camera, but the city is not real geometry to the model.**
+The camera is genuine: proper perspective projection, positioned at the drone's
+simulated coordinates, pointing along its direction of travel. What it flies
+through is scenery. The physics has no obstacles, no collision, no lateral axis
+and no 3D world — the buildings exist only in the renderer. Nothing in the
+model, the health score or the mission decision knows the city is there.
+
+This also uses **no extra toolboxes**. UAV Toolbox's `uavScenario`/`show3D` and
+the Unreal-based `Simulation 3D` blocks would both do this too, but the first
+opens its own window and the second needs a multi-gigabyte support package that
+is not installed here. Plain `patch` geometry plus MATLAB's camera properties
+gives a first-person view that embeds directly in this figure and keeps the
+project runnable on a bare Simulink licence.
 
 ---
 
@@ -255,11 +263,23 @@ The threshold is not a fixed number. It rises as the drone flies further out,
 and rises again as the motor degrades and pulls more current. In the default run
 it climbs from 10% at takeoff to about 60% by the time the drone turns.
 
-There are **three** reasons to stop heading away from home:
+### Turning back is not the same as failing
 
-1. it reached the waypoint,
-2. it no longer has the charge to get back,
-3. health says ALARM — the aircraft is not fit to keep going.
+There are **three** reasons to stop heading away from home, and only two of them
+are aborts:
+
+| Trigger | Meaning | Summary says |
+|---|---|---|
+| Reached the waypoint | **Mission complete.** Coming home is the plan — it is an out-and-back route. | `MISSION COMPLETE - reached the waypoint` |
+| Out of energy margin | Abort. Any further and it could not get back. | `ABORT - no longer enough charge to get home` |
+| Health ALARM | Abort. The aircraft is not fit to continue, regardless of charge. | `ABORT - health ALARM, not fit to continue` |
+
+So "returning home" on its own tells you nothing about success. What matters is
+*where* it turned. In the default run it aborts at 3817 m — the mission is not
+completed, but the drone survives. The fixed-rule run reaches the waypoint and
+is therefore a "complete" mission, then dies 3913 m from home on the way back.
+
+A mission that completes and loses the aircraft is not a success.
 
 ---
 

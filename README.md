@@ -99,7 +99,7 @@ pictures.
 | `matlab/sim/droneguard_run.m` | One-command entry point: load parameters, simulate, plot. |
 | `matlab/sim/droneguard_compare.m` | Flies the identical mission twice — dynamic vs fixed turn-back rule — and plots them together. |
 | `matlab/sim/droneguard_plot.m` | The four-panel mission figure and the console summary. |
-| `matlab/sim/droneguard_dashboard.m` | Animated playback of a mission: side-on scene, down-looking view, and gauges updating as it flies. |
+| `matlab/sim/droneguard_dashboard.m` | Animated playback of a mission: side-on scene, an FPV nose camera flying down a city street, and gauges updating as it flies. |
 | `matlab/sim/droneguard_missionend.m` | Finds the sample where a mission genuinely ended (home, or battery empty) so plots do not show meaningless tails. |
 | `docs/DroneGuard.pdf` | The original project deck this is built from. |
 

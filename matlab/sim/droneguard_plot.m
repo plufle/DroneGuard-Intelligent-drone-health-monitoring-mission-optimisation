@@ -93,8 +93,18 @@ end
 fprintf('\n--- DroneGuard mission summary ---\n');
 fprintf('Waypoint            : %d m out\n', c.Range);
 if ~isempty(iTurn)
-    why = 'ran out of energy margin';
-    if dist(iTurn) >= c.Range - 5, why = 'reached the waypoint'; end
+    % Three different things can end the outbound leg. This used to blame the
+    % energy margin for all of them - including a health abort taken with 81%
+    % of the pack still full, which is the opposite of running out of margin.
+    if dist(iTurn) >= c.Range - 5
+        why = 'MISSION COMPLETE - reached the waypoint';
+    elseif soc(iTurn) <= rth(iTurn) + 1e-6
+        why = 'ABORT - no longer enough charge to get home';
+    elseif alert(iTurn) >= 2
+        why = 'ABORT - health ALARM, not fit to continue';
+    else
+        why = 'reason unclear';
+    end
     fprintf('Turned back         : t = %.0f s at %.0f m  (%s)\n', ...
         t(iTurn), dist(iTurn), why);
 end

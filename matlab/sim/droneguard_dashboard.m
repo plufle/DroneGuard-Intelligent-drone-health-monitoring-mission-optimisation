@@ -62,8 +62,7 @@ if isempty(frames), frames = 1; end
 
 %% ---------- figure ------------------------------------------------------
 fig = figure('Name','DroneGuard - mission playback','Color','w', ...
-             'Position',[40 40 1280 760], 'Renderer','opengl', ...
-             'GraphicsSmoothing','off');
+             'Position',[40 40 1280 760]);
 if exist('theme','file'), theme(fig,'light'); end
 
 xMax = max(max(dist)*1.08, c.Range*1.05);
@@ -90,18 +89,57 @@ xlabel(axScene,'Distance from home [m]'); ylabel(axScene,'Altitude [m]');
 title(axScene,'Mission','FontSize',10);
 grid(axScene,'on'); box(axScene,'on');
 
-% --- camera: down-looking, rendered from position ------------------------
-axCam = axes(fig,'Position',[0.045 0.07 0.28 0.41]);
-[tile, mPerPx] = groundTile();            % one repeating patch of scenery
-nTile = size(tile,1);
-hImg  = image(axCam, [0 1],[0 1], tile(1:10,1:10,:));
-hold(axCam,'on'); axis(axCam,[0 1 0 1]); axis(axCam,'square');
-set(axCam,'XTick',[],'YTick',[],'Box','on','YDir','normal');
-plot(axCam,[0.5 0.5],[0.45 0.55],'w-','LineWidth',1.2);   % crosshair
-plot(axCam,[0.45 0.55],[0.5 0.5],'w-','LineWidth',1.2);
-hCamTxt = text(axCam,0.03,0.97,'','Color','w','FontSize',9, ...
+% --- FPV: nose camera flying down a city corridor ------------------------
+% Real perspective projection driven by the drone's own pose. The city is
+% geometry the camera actually flies through, not a scrolling picture - but
+% it is scenery only: the model has no obstacles and nothing can be hit.
+% The axes has to live inside a uipanel. A 3D axes with a perspective camera
+% sitting INSIDE its own data volume projects nearby geometry to enormous
+% screen coordinates, and MATLAB does not clip that to the axes rectangle -
+% the FPV simply paints over the whole figure. A uipanel does clip its
+% children, so it is the container that keeps the view in its box.
+pnlFPV = uipanel(fig,'Units','normalized','Position',[0.045 0.07 0.28 0.41], ...
+                 'BorderType','line','BackgroundColor',[0.62 0.74 0.88], ...
+                 'Title','FPV nose camera  (city is scenery, not obstacles)', ...
+                 'FontSize',9,'TitlePosition','centertop');
+axFPV = axes(pnlFPV,'Position',[0 0 1 1]);
+[V, F, C] = cityBlocks(xMax);
+patch(axFPV,'Vertices',V,'Faces',F,'FaceVertexCData',C, ...
+      'FaceColor','flat','EdgeColor',[0.25 0.25 0.28],'LineWidth',0.1);
+hold(axFPV,'on');
+% ground and the road the drone follows
+patch(axFPV,'XData',[-300 xMax+300 xMax+300 -300],'YData',[-260 -260 260 260], ...
+      'ZData',[0 0 0 0],'FaceColor',[0.42 0.46 0.38],'EdgeColor','none');
+patch(axFPV,'XData',[-300 xMax+300 xMax+300 -300],'YData',[-14 -14 14 14], ...
+      'ZData',[0.4 0.4 0.4 0.4],'FaceColor',[0.30 0.30 0.32],'EdgeColor','none');
+% The view volume is a CUBE that travels with the drone, not the whole 7 km
+% route. With a perspective camera sitting inside the box, a box that long
+% projects geometry far outside the panel and the FPV spills over the rest of
+% the figure. A cube of side 2*fpvW keeps the projection sane, keeps the
+% proportions isotropic, and doubles as the view distance.
+fpvW = 320;                                  % view half-width [m]
+set(axFPV,'Projection','perspective','Color',[0.62 0.74 0.88], ...
+          'XTick',[],'YTick',[],'ZTick',[],'Box','on', ...
+          'PlotBoxAspectRatio',[1 1 1], ...
+          'XLim',[-fpvW fpvW],'YLim',[-fpvW fpvW],'ZLim',[0 2*fpvW], ...
+          'CameraUpVector',[0 0 1],'CameraViewAngle',75, ...
+          'Clipping','on','SortMethod','depth');
+% A fixed sun rather than camlight('headlight'): camlight needs a valid camera
+% position, which does not exist until the first frame, and an infinite light
+% never has to be moved as the drone flies.
+light(axFPV,'Position',[-0.6 -0.5 1],'Style','infinite');
+lighting(axFPV,'gouraud'); material(axFPV,'dull');
+set(axFPV,'CameraPosition',[0 0 50],'CameraTarget',[60 0 43]);
+% HUD drawn on its own transparent axes, inside the same panel so it is
+% clipped identically and always sits on top of the 3D view
+axHUD = axes(pnlFPV,'Position',[0 0 1 1],'Color','none', ...
+             'XTick',[],'YTick',[],'XLim',[0 1],'YLim',[0 1],'HitTest','off');
+axHUD.XAxis.Visible = 'off'; axHUD.YAxis.Visible = 'off';
+hold(axHUD,'on');
+plot(axHUD,[0.47 0.53],[0.5 0.5],'w-','LineWidth',1.2);
+plot(axHUD,[0.5 0.5],[0.47 0.53],'w-','LineWidth',1.2);
+hCamTxt = text(axHUD,0.03,0.97,'','Color','w','FontSize',9, ...
                'FontName','Consolas','VerticalAlignment','top');
-title(axCam,'Down-looking view  (rendered from position)','FontSize',9);
 
 % --- status -------------------------------------------------------------
 axStat = axes(fig,'Position',[0.35 0.07 0.215 0.41]);
@@ -144,6 +182,10 @@ ylim(axM,[min(I_mot)*0.9 max(I_mot)*1.1]);
 xlim(axM,[0 t(end)]); xlabel(axM,'Time [s]'); grid(axM,'on');
 title(axM,'Motor','FontSize',10);
 
+% Drop the hover toolbars - they serve no purpose during playback and they
+% show up in exported stills and video frames.
+set(findobj(fig,'Type','axes'),'Toolbar',[]);
+
 %% ---------- optional video ---------------------------------------------
 vid = [];
 if strlength(opts.Save) > 0
@@ -179,15 +221,14 @@ for k = frames
     set(hRetLn,'XData',[dr dr],'YData',[0 yMax]);
     set(hNoGo, 'XData',[dr xMax xMax dr],'YData',[0 0 yMax yMax]);
 
-    % camera
-    fovW = 2*max(alt(k),1)*tand(30);        % 60 deg total field of view
-    npx  = max(round(fovW/mPerPx), 8);
-    cx   = round(dist(k)/mPerPx);
-    xi   = mod(cx + (0:npx-1) - round(npx/2), nTile) + 1;
-    yi   = mod((0:npx-1), nTile) + 1;
-    set(hImg,'CData',tile(yi,xi,:));
-    set(hCamTxt,'String',sprintf('ALT %5.1f m\nGS  %5.1f m/s\nFOV %5.1f m', ...
-                                 alt(k), abs(spd(k)), fovW));
+    % FPV - put the camera at the drone and point it where it is going
+    hdg = sign(spd(k)); if hdg == 0, hdg = 1; end     % +1 outbound, -1 homeward
+    camPos = [dist(k), 0, max(alt(k),2)];
+    camTgt = camPos + [hdg*60, 0, -7];                % look ahead, nosed down
+    set(axFPV,'XLim',dist(k)+[-fpvW fpvW], ...        % cube travels with it
+              'CameraPosition',camPos,'CameraTarget',camTgt);
+    set(hCamTxt,'String',sprintf('ALT %5.1f m\nGS  %5.1f m/s\nHDG %s', ...
+                                 alt(k), abs(spd(k)), ternary(hdg>0,'OUT','HOME')));
 
     % status
     set(hLamp,'FaceColor',alertCols(ia,:));
@@ -230,27 +271,58 @@ if isvalid(fig), drawnow; end
 end
 
 
-function [tile, mPerPx] = groundTile()
-%GROUNDTILE  One square patch of synthetic scenery, repeated as the drone flies.
-%   Built from smoothed noise using only core MATLAB (conv2) so the project
-%   stays free of extra toolboxes.
-mPerPx = 0.5;
-n      = 800;                                  % 400 m square at 0.5 m/px
-rng(7);                                        % same scenery every run
-% Smoothing has to be CIRCULAR, or the patch does not wrap and a seam scrolls
-% past every time it repeats. An FFT convolution is periodic by construction.
-[X, Y] = meshgrid(0:n-1, 0:n-1);
-X = min(X, n-X);  Y = min(Y, n-Y);
-sig = 5/mPerPx;                                % 5 m features
-ker = exp(-(X.^2 + Y.^2)/(2*sig^2));  ker = ker/sum(ker(:));
-f   = real(ifft2(fft2(randn(n)) .* fft2(ker)));
-f   = (f - min(f(:))) / (max(f(:)) - min(f(:)));
-% fields in green and brown, with darker clumps standing in for trees
-tile = cat(3, 0.34 + 0.30*f, 0.44 + 0.26*f, 0.22 + 0.16*f);
-trees = f > 0.72;
-tile(cat(3,trees,false(n),false(n))) = 0.18;
-tile(cat(3,false(n),trees,false(n))) = 0.32;
-tile(cat(3,false(n),false(n),trees)) = 0.15;
+function [V, F, C] = cityBlocks(xMax)
+%CITYBLOCKS  Buildings lining the flight corridor, as one merged patch.
+%
+%   Every building is a box, and all of them are concatenated into a single
+%   vertex/face list. That matters: one patch object means each animation
+%   frame only moves the camera, instead of MATLAB re-sorting hundreds of
+%   separate objects.
+%
+%   The drone flies along y = 0, and nothing is placed within 22 m of that
+%   line, so it flies down a street rather than through a wall. There is no
+%   collision model - this is scenery.
+
+rng(11);                                    % same city every run
+gapY   = 22;                                % clear corridor half-width [m]
+rows   = [1 2 3];                           % how many blocks deep each side
+pitch  = 55;                                % spacing along the route [m]
+xs     = -200:pitch:(xMax+200);
+
+V = zeros(0,3);  F = zeros(0,4);  C = zeros(0,3);
+for x0 = xs
+    for sideSign = [-1 1]
+        for r = rows
+            if rand < 0.18, continue; end   % gaps, so it is not a solid wall
+            w  = 22 + rand*16;              % footprint along x
+            dp = 20 + rand*18;              % footprint across y
+            h  = 12 + rand*72;              % height - some above cruise height
+            y0 = sideSign * (gapY + (r-1)*38 + rand*6);
+            cx = x0 + rand*12;
+            [v, f] = boxMesh(cx, y0 + sideSign*dp/2, w, dp, h);
+            shade = 0.38 + 0.30*rand;
+            col   = [shade, shade*0.99, shade*1.06];   % cool concrete greys
+            F = [F; f + size(V,1)];         %#ok<AGROW>
+            V = [V; v];                     %#ok<AGROW>
+            C = [C; repmat(col, size(f,1), 1)];  %#ok<AGROW>
+        end
+    end
+end
+end
+
+
+function [v, f] = boxMesh(cx, cy, w, d, h)
+%BOXMESH  Eight vertices and six quad faces for one building.
+x1 = cx-w/2;  x2 = cx+w/2;
+y1 = cy-d/2;  y2 = cy+d/2;
+v = [x1 y1 0; x2 y1 0; x2 y2 0; x1 y2 0; ...
+     x1 y1 h; x2 y1 h; x2 y2 h; x1 y2 h];
+f = [1 2 3 4; 5 6 7 8; 1 2 6 5; 2 3 7 6; 3 4 8 7; 4 1 5 8];
+end
+
+
+function out = ternary(cond, a, b)
+if cond, out = a; else, out = b; end
 end
 
 

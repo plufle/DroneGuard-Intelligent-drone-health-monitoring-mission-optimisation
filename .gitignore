@@ -31,12 +31,3 @@ octave-workspace
 .DS_Store
 Thumbs.db
 desktop.ini
-
-# ---- Python (laptop_droneguard) ----
-.venv/
-venv/
-env/
-__pycache__/
-*.py[cod]
-*.egg-info/
-.streamlit/secrets.toml
